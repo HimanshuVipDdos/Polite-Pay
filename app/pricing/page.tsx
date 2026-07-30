@@ -1,6 +1,6 @@
 import { createServerActionClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { Wind, Check, Sparkles } from "lucide-react";
+import { Wind, Check } from "lucide-react";
+import UpgradeButton from "./upgrade-button";
 
 async function getUser() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -89,18 +89,7 @@ export default async function PricingPage() {
               ))}
             </ul>
             <div className="mt-8">
-              <div className="relative group">
-                <button
-                  disabled
-                  className="w-full bg-indigo-400 text-white px-5 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  {isPro ? "Current Plan" : "Upgrade to Pro"}
-                </button>
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-800 text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                  Payment coming soon &middot; Stripe integration required
-                </div>
-              </div>
+              <UpgradeButton userId={user?.id ?? null} isPro={isPro} />
             </div>
           </div>
         </div>
