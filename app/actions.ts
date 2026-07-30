@@ -1,7 +1,6 @@
 "use server";
 
-// TODO: once Supabase project is connected, swap mocks below for real queries via:
-//   import { createServerActionClient } from "@/lib/supabase/server";
+import { createServerActionClient } from "@/lib/supabase/server";
 
 export type FollowUpTone = "gentle" | "standard" | "firm";
 export type InvoiceStatus = "Overdue" | "Pending" | "Paid";
@@ -27,83 +26,266 @@ export interface DashboardMetrics {
   paidThisMonth: string;
 }
 
-function simulateDelay(ms = 800) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  subscription_status: "trialing" | "active" | "past_due" | "canceled" | null;
 }
 
-const mockInvoices: Invoice[] = [
-  { id: "INV-2023-001", client: "Acme Corp", amount: "$2,450.00", dueDate: "Oct 15, 2023", status: "Overdue", nextAction: "Send Firm Warning" },
-  { id: "INV-2023-002", client: "Globex Inc", amount: "$1,120.00", dueDate: "Oct 20, 2023", status: "Pending", nextAction: "Send Gentle Nudge" },
-  { id: "INV-2023-003", client: "Soylent Corp", amount: "$4,500.00", dueDate: "Oct 22, 2023", status: "Pending", nextAction: "None (Too Early)" },
-  { id: "INV-2023-004", client: "Initech", amount: "$850.00", dueDate: "Oct 10, 2023", status: "Paid", nextAction: "Send Thank You" },
-];
+export async function getCurrentUser(): Promise<UserProfile | null> {
+  const supabase = await createServerActionClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-/**
- * addInvoice
- * TODO: replace mock logic with:
- *   const supabase = createServerActionClient();
- *   const { data: { user } } = await supabase.auth.getUser();
- *   await supabase.from("invoices").insert({ user_id: user.id, ... });
- */
+  if (!user) return null;
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("subscription_status")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile) {
+    await supabase.from("users").upsert({
+      id: user.id,
+      email: user.email!,
+      subscription_status: "trialing",
+    });
+  }
+
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    name: user.user_metadata?.full_name ?? user.email?.split("@")[0] ?? "",
+    subscription_status: profile?.subscription_status ?? "trialing",
+  };
+}
+
 export async function addInvoice(
   formData: FormData
 ): Promise<AddInvoiceResult> {
-  await simulateDelay();
+  const supabase = await createServerActionClient();
+  const user = await getCurrentUser();
+  if (!user) {
+    return { success: false, error: "You must be signed in." };
+  }
 
-  const client = formData.get("clientName") as string;
-  const email = formData.get("clientEmail") as string;
-  const amount = formData.get("invoiceLink") as string; // placeholder field per UI
+  const clientName = formData.get("clientName") as string;
+  const clientEmail = formData.get("clientEmail") as string;
+  const amountStr = formData.get("amount") as string;
   const tone = formData.get("tone") as FollowUpTone;
 
-  if (!client || !email || !tone) {
+  if (!clientName || !clientEmail || !amountStr || !tone) {
     return { success: false, error: "Missing required fields." };
   }
 
-  const invoice: Invoice = {
-    id: `INV-${Date.now()}`,
-    client,
-    amount: amount || "$0.00",
-    dueDate: new Date().toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
-    status: "Pending",
-    nextAction:
-      tone === "gentle"
-        ? "Send Gentle Nudge"
-        : tone === "firm"
-          ? "Send Firm Warning"
-          : "Send Standard Reminder",
+  const amount = parseFloat(amountStr);
+  if (isNaN(amount) || amount <= 0) {
+    return { success: false, error: "Invalid amount." };
+  }
+
+  if (user.subscription_status !== "active" && user.subscription_status !== "trialing") {
+    const { count } = await supabase
+      .from("invoices")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id);
+
+    if (count !== null && count >= 5) {
+      return {
+        success: false,
+        error:
+          "Free plan limited to 5 invoices. Upgrade to Pro for unlimited invoices.",
+      };
+    }
+  }
+
+  if (
+    user.subscription_status !== "active" &&
+    user.subscription_status !== "trialing" &&
+    tone === "firm"
+  ) {
+    return {
+      success: false,
+      error: "Firm tone is a Pro feature. Upgrade to use it.",
+    };
+  }
+
+  let { data: existingClient } = await supabase
+    .from("clients")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("email", clientEmail)
+    .single();
+
+  if (!existingClient) {
+    const { data: newClient, error: clientError } = await supabase
+      .from("clients")
+      .insert({
+        user_id: user.id,
+        name: clientName,
+        email: clientEmail,
+      })
+      .select("id")
+      .single();
+
+    if (clientError || !newClient) {
+      return { success: false, error: "Failed to create client." };
+    }
+    existingClient = newClient;
+  }
+
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 30);
+
+  const { data: invoice, error: invoiceError } = await supabase
+    .from("invoices")
+    .insert({
+      user_id: user.id,
+      client_id: existingClient.id,
+      amount,
+      due_date: dueDate.toISOString().split("T")[0],
+      follow_up_tone: tone,
+      status: "pending",
+    })
+    .select("id, amount, due_date, status, follow_up_tone, clients(name)")
+    .single();
+
+  if (invoiceError || !invoice) {
+    return { success: false, error: "Failed to create invoice." };
+  }
+
+  const nextActionMap: Record<FollowUpTone, string> = {
+    gentle: "Send Gentle Nudge",
+    standard: "Send Standard Reminder",
+    firm: "Send Firm Warning",
   };
 
-  return { success: true, invoice };
+  const clientsData = invoice.clients as unknown as { name: string } | null;
+  return {
+    success: true,
+    invoice: {
+      id: invoice.id.slice(0, 8).toUpperCase(),
+      client: clientsData?.name ?? "Unknown",
+      amount: `$${parseFloat(invoice.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      dueDate: new Date(invoice.due_date).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      status: invoice.status === "paid" ? "Paid" : invoice.status === "overdue" ? "Overdue" : "Pending",
+      nextAction: nextActionMap[invoice.follow_up_tone as FollowUpTone],
+    },
+  };
 }
 
-/**
- * getDashboardMetrics
- * TODO: replace with actual Supabase aggregate query, e.g.:
- *   const { data } = await supabase
- *     .from("invoices")
- *     .select("amount, status")
- *     .eq("user_id", user.id);
- */
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  await simulateDelay(500);
+  const supabase = await createServerActionClient();
+  const user = await getCurrentUser();
+  if (!user) {
+    return { totalOutstanding: "$0.00", activeReminders: 0, paidThisMonth: "$0.00" };
+  }
+
+  const { data: pendingInvoices } = await supabase
+    .from("invoices")
+    .select("amount")
+    .eq("user_id", user.id)
+    .in("status", ["pending", "overdue"]);
+
+  const totalOutstanding =
+    pendingInvoices?.reduce(
+      (sum, inv) => sum + parseFloat(inv.amount),
+      0
+    ) ?? 0;
+
+  const { count: activeReminders } = await supabase
+    .from("invoices")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .in("status", ["pending", "overdue"]);
+
+  const now = new Date();
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .split("T")[0];
+
+  const { data: paidThisMonth } = await supabase
+    .from("invoices")
+    .select("amount")
+    .eq("user_id", user.id)
+    .eq("status", "paid")
+    .gte("created_at", firstOfMonth);
+
+  const paidTotal =
+    paidThisMonth?.reduce((sum, inv) => sum + parseFloat(inv.amount), 0) ?? 0;
 
   return {
-    totalOutstanding: "$12,450.00",
-    activeReminders: 24,
-    paidThisMonth: "$8,230.00",
+    totalOutstanding: `$${totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+    activeReminders: activeReminders ?? 0,
+    paidThisMonth: `$${paidTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
   };
 }
 
-/**
- * getInvoices
- * TODO: replace with:
- *   const { data } = await supabase.from("invoices").select("*, clients(name)").eq("user_id", user.id);
- */
 export async function getInvoices(): Promise<Invoice[]> {
-  await simulateDelay(500);
-  return mockInvoices;
+  const supabase = await createServerActionClient();
+  const user = await getCurrentUser();
+  if (!user) return [];
+
+  const { data: invoices } = await supabase
+    .from("invoices")
+    .select("id, amount, due_date, status, follow_up_tone, created_at, clients(name)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (!invoices) return [];
+
+  const nextActionMap: Record<string, string> = {
+    friendly: "Send Gentle Nudge",
+    gentle: "Send Gentle Nudge",
+    standard: "Send Standard Reminder",
+    firm: "Send Firm Warning",
+    formal: "Send Formal Reminder",
+  };
+
+  return invoices.map((inv) => {
+    const clientsData = inv.clients as unknown as { name: string } | null;
+    return {
+      id: inv.id.slice(0, 8).toUpperCase(),
+      client: clientsData?.name ?? "Unknown",
+      amount: `$${parseFloat(inv.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+      dueDate: new Date(inv.due_date).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      status:
+        inv.status === "paid"
+          ? "Paid"
+          : inv.status === "overdue"
+            ? "Overdue"
+            : "Pending",
+      nextAction:
+        inv.status === "paid"
+          ? "Send Thank You"
+          : inv.status === "overdue"
+            ? nextActionMap[inv.follow_up_tone] ?? "Send Reminder"
+            : inv.status === "pending"
+              ? nextActionMap[inv.follow_up_tone] ?? "Send Reminder"
+              : "None",
+    };
+  });
+}
+
+export async function getInvoiceCount(): Promise<number> {
+  const supabase = await createServerActionClient();
+  const user = await getCurrentUser();
+  if (!user) return 0;
+
+  const { count } = await supabase
+    .from("invoices")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id);
+
+  return count ?? 0;
 }

@@ -17,6 +17,7 @@ const toneOptions: {
   title: string;
   description: string;
   activeClasses: string;
+  pro: boolean;
 }[] = [
   {
     value: "gentle",
@@ -25,6 +26,7 @@ const toneOptions: {
     description: "A polite reminder, perfect for the first follow-up.",
     activeClasses:
       "border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600 shadow-sm",
+    pro: false,
   },
   {
     value: "standard",
@@ -33,6 +35,7 @@ const toneOptions: {
     description: "Firm but polite, suitable for overdue invoices.",
     activeClasses:
       "border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600 shadow-sm",
+    pro: false,
   },
   {
     value: "firm",
@@ -41,6 +44,7 @@ const toneOptions: {
     description: "Direct and urgent, for significantly late payments.",
     activeClasses:
       "border-red-600 bg-red-50/50 ring-1 ring-red-600 shadow-sm",
+    pro: true,
   },
 ];
 
@@ -49,14 +53,20 @@ export default function AddInvoiceModal() {
   const [selectedTone, setSelectedTone] = useState<FollowUpTone>("standard");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   function handleSubmit(formData: FormData) {
     setError(null);
+    setSuccess(false);
     formData.set("tone", selectedTone);
     startTransition(async () => {
       const result = await addInvoice(formData);
       if (result.success) {
-        setIsModalOpen(false);
+        setSuccess(true);
+        setTimeout(() => {
+          setIsModalOpen(false);
+          setSuccess(false);
+        }, 1000);
       } else {
         setError(result.error ?? "Something went wrong.");
       }
@@ -123,9 +133,23 @@ export default function AddInvoiceModal() {
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400"
                   />
                 </div>
-                <div className="col-span-2 space-y-2">
+                <div className="space-y-2">
                   <label className="block text-sm font-medium text-slate-700">
-                    Invoice Link / URL
+                    Amount ($)
+                  </label>
+                  <input
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    placeholder="2500.00"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Invoice Link (optional)
                   </label>
                   <input
                     name="invoiceLink"
@@ -170,15 +194,22 @@ export default function AddInvoiceModal() {
                                 : "text-slate-400"
                             }`}
                           />
-                          {isActive && (
-                            <CheckCircle2
-                              className={`w-4 h-4 ${
-                                tone.value === "firm"
-                                  ? "text-red-600"
-                                  : "text-indigo-600"
-                              }`}
-                            />
-                          )}
+                          <div className="flex items-center gap-1">
+                            {tone.pro && (
+                              <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                                PRO
+                              </span>
+                            )}
+                            {isActive && (
+                              <CheckCircle2
+                                className={`w-4 h-4 ${
+                                  tone.value === "firm"
+                                    ? "text-red-600"
+                                    : "text-indigo-600"
+                                }`}
+                              />
+                            )}
+                          </div>
                         </div>
                         <div
                           className={`text-sm font-semibold mb-1 tracking-tight ${
@@ -200,7 +231,16 @@ export default function AddInvoiceModal() {
                 </div>
               </div>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-md border border-red-200">
+                  {error}
+                </p>
+              )}
+              {success && (
+                <p className="text-sm text-emerald-600 bg-emerald-50 px-3 py-2 rounded-md border border-emerald-200">
+                  Invoice added successfully!
+                </p>
+              )}
             </div>
 
             <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex justify-end space-x-3 rounded-b-2xl">

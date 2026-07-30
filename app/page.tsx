@@ -1,5 +1,14 @@
+import { createServerActionClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
-export default function RootPage() {
-  redirect("/dashboard");
+export default async function RootPage() {
+  const supabase = await createServerActionClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    redirect("/dashboard");
+  }
+  redirect("/auth/login");
 }

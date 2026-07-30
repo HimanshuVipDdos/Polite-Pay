@@ -1,10 +1,6 @@
 "use server";
 
-import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-02-24.acacia",
-});
+import { getStripe } from "@/lib/stripe";
 
 interface CheckoutSessionResult {
   success: boolean;
@@ -21,6 +17,7 @@ export async function createCheckoutSession(
   userId: string
 ): Promise<CheckoutSessionResult> {
   try {
+    const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
