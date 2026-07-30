@@ -1,7 +1,5 @@
 "use server";
 
-import { createServerActionClient } from "@/lib/supabase/server";
-
 export type FollowUpTone = "gentle" | "standard" | "firm";
 export type InvoiceStatus = "Overdue" | "Pending" | "Paid";
 
@@ -33,12 +31,31 @@ export interface UserProfile {
   subscription_status: "trialing" | "active" | "past_due" | "canceled" | null;
 }
 
-export async function getCurrentUser(): Promise<UserProfile | null> {
-  const supabase = await createServerActionClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+const mockInvoices: Invoice[] = [
+  { id: "INV-001", client: "Acme Corp", amount: "$2,450.00", dueDate: "Oct 15, 2025", status: "Overdue", nextAction: "Send Firm Warning" },
+  { id: "INV-002", client: "Globex Inc", amount: "$1,120.00", dueDate: "Oct 20, 2025", status: "Pending", nextAction: "Send Gentle Nudge" },
+  { id: "INV-003", client: "Soylent Corp", amount: "$4,500.00", dueDate: "Oct 22, 2025", status: "Pending", nextAction: "None (Too Early)" },
+  { id: "INV-004", client: "Initech", amount: "$850.00", dueDate: "Oct 10, 2025", status: "Paid", nextAction: "Send Thank You" },
+];
 
+function isSupabaseConfigured(): boolean {
+  return !!(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+}
+
+async function getSupabase() {
+  if (!isSupabaseConfigured()) return null;
+  const { createServerActionClient } = await import("@/lib/supabase/server");
+  return createServerActionClient();
+}
+
+export async function getCurrentUser(): Promise<UserProfile | null> {
+  const supabase = await getSupabase();
+  if (!supabase) return null;
+
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
   const { data: profile } = await supabase
@@ -66,7 +83,30 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
 export async function addInvoice(
   formData: FormData
 ): Promise<AddInvoiceResult> {
-  const supabase = await createServerActionClient();
+  const supabase = await getSupabase();
+
+  if (!supabase) {
+    const clientName = formData.get("clientName") as string;
+    const amountStr = formData.get("amount") as string;
+    const tone = formData.get("tone") as FollowUpTone;
+
+    if (!clientName || !amountStr || !tone) {
+      return { success: false, error: "Missing required fields." };
+    }
+
+    return {
+      success: true,
+      invoice: {
+        id: `INV-${Date.now()}`.slice(0, 8),
+        client: clientName,
+        amount: `$${parseFloat(amountStr || "0").toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+        dueDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        status: "Pending",
+        nextAction: tone === "gentle" ? "Send Gentle Nudge" : tone === "firm" ? "Send Firm Warning" : "Send Standard Reminder",
+      },
+    };
+  }
+
   const user = await getCurrentUser();
   if (!user) {
     return { success: false, error: "You must be signed in." };
@@ -93,23 +133,12 @@ export async function addInvoice(
       .eq("user_id", user.id);
 
     if (count !== null && count >= 5) {
-      return {
-        success: false,
-        error:
-          "Free plan limited to 5 invoices. Upgrade to Pro for unlimited invoices.",
-      };
+      return { success: false, error: "Free plan limited to 5 invoices. Upgrade to Pro for unlimited invoices." };
     }
   }
 
-  if (
-    user.subscription_status !== "active" &&
-    user.subscription_status !== "trialing" &&
-    tone === "firm"
-  ) {
-    return {
-      success: false,
-      error: "Firm tone is a Pro feature. Upgrade to use it.",
-    };
+  if (user.subscription_status !== "active" && user.subscription_status !== "trialing" && tone === "firm") {
+    return { success: false, error: "Firm tone is a Pro feature. Upgrade to use it." };
   }
 
   let { data: existingClient } = await supabase
@@ -122,17 +151,11 @@ export async function addInvoice(
   if (!existingClient) {
     const { data: newClient, error: clientError } = await supabase
       .from("clients")
-      .insert({
-        user_id: user.id,
-        name: clientName,
-        email: clientEmail,
-      })
+      .insert({ user_id: user.id, name: clientName, email: clientEmail })
       .select("id")
       .single();
 
-    if (clientError || !newClient) {
-      return { success: false, error: "Failed to create client." };
-    }
+    if (clientError || !newClient) return { success: false, error: "Failed to create client." };
     existingClient = newClient;
   }
 
@@ -152,28 +175,22 @@ export async function addInvoice(
     .select("id, amount, due_date, status, follow_up_tone, clients(name)")
     .single();
 
-  if (invoiceError || !invoice) {
-    return { success: false, error: "Failed to create invoice." };
-  }
+  if (invoiceError || !invoice) return { success: false, error: "Failed to create invoice." };
 
+  const clientsData = invoice.clients as unknown as { name: string } | null;
   const nextActionMap: Record<FollowUpTone, string> = {
     gentle: "Send Gentle Nudge",
     standard: "Send Standard Reminder",
     firm: "Send Firm Warning",
   };
 
-  const clientsData = invoice.clients as unknown as { name: string } | null;
   return {
     success: true,
     invoice: {
       id: invoice.id.slice(0, 8).toUpperCase(),
       client: clientsData?.name ?? "Unknown",
       amount: `$${parseFloat(invoice.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
-      dueDate: new Date(invoice.due_date).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
+      dueDate: new Date(invoice.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
       status: invoice.status === "paid" ? "Paid" : invoice.status === "overdue" ? "Overdue" : "Pending",
       nextAction: nextActionMap[invoice.follow_up_tone as FollowUpTone],
     },
@@ -181,11 +198,13 @@ export async function addInvoice(
 }
 
 export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  const supabase = await createServerActionClient();
-  const user = await getCurrentUser();
-  if (!user) {
-    return { totalOutstanding: "$0.00", activeReminders: 0, paidThisMonth: "$0.00" };
+  const supabase = await getSupabase();
+  if (!supabase) {
+    return { totalOutstanding: "$12,450.00", activeReminders: 24, paidThisMonth: "$8,230.00" };
   }
+
+  const user = await getCurrentUser();
+  if (!user) return { totalOutstanding: "$0.00", activeReminders: 0, paidThisMonth: "$0.00" };
 
   const { data: pendingInvoices } = await supabase
     .from("invoices")
@@ -193,11 +212,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     .eq("user_id", user.id)
     .in("status", ["pending", "overdue"]);
 
-  const totalOutstanding =
-    pendingInvoices?.reduce(
-      (sum, inv) => sum + parseFloat(inv.amount),
-      0
-    ) ?? 0;
+  const totalOutstanding = pendingInvoices?.reduce((sum, inv) => sum + parseFloat(inv.amount), 0) ?? 0;
 
   const { count: activeReminders } = await supabase
     .from("invoices")
@@ -206,9 +221,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     .in("status", ["pending", "overdue"]);
 
   const now = new Date();
-  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-    .toISOString()
-    .split("T")[0];
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
 
   const { data: paidThisMonth } = await supabase
     .from("invoices")
@@ -217,8 +230,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     .eq("status", "paid")
     .gte("created_at", firstOfMonth);
 
-  const paidTotal =
-    paidThisMonth?.reduce((sum, inv) => sum + parseFloat(inv.amount), 0) ?? 0;
+  const paidTotal = paidThisMonth?.reduce((sum, inv) => sum + parseFloat(inv.amount), 0) ?? 0;
 
   return {
     totalOutstanding: `$${totalOutstanding.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
@@ -228,7 +240,9 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
 }
 
 export async function getInvoices(): Promise<Invoice[]> {
-  const supabase = await createServerActionClient();
+  const supabase = await getSupabase();
+  if (!supabase) return mockInvoices;
+
   const user = await getCurrentUser();
   if (!user) return [];
 
@@ -254,31 +268,17 @@ export async function getInvoices(): Promise<Invoice[]> {
       id: inv.id.slice(0, 8).toUpperCase(),
       client: clientsData?.name ?? "Unknown",
       amount: `$${parseFloat(inv.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
-      dueDate: new Date(inv.due_date).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-      status:
-        inv.status === "paid"
-          ? "Paid"
-          : inv.status === "overdue"
-            ? "Overdue"
-            : "Pending",
-      nextAction:
-        inv.status === "paid"
-          ? "Send Thank You"
-          : inv.status === "overdue"
-            ? nextActionMap[inv.follow_up_tone] ?? "Send Reminder"
-            : inv.status === "pending"
-              ? nextActionMap[inv.follow_up_tone] ?? "Send Reminder"
-              : "None",
+      dueDate: new Date(inv.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      status: inv.status === "paid" ? "Paid" : inv.status === "overdue" ? "Overdue" : "Pending",
+      nextAction: inv.status === "paid" ? "Send Thank You" : nextActionMap[inv.follow_up_tone] ?? "Send Reminder",
     };
   });
 }
 
 export async function getInvoiceCount(): Promise<number> {
-  const supabase = await createServerActionClient();
+  const supabase = await getSupabase();
+  if (!supabase) return 4;
+
   const user = await getCurrentUser();
   if (!user) return 0;
 

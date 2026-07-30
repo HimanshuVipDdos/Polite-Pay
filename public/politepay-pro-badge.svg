@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f46e5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="card1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.95" />
+      <stop offset="100%" style="stop-color:#f8fafc;stop-opacity:0.95" />
+    </linearGradient>
+    <linearGradient id="badge" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="protext" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f46e5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#4f46e5" flood-opacity="0.15"/>
+    </filter>
+    <filter id="shadow2">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" fill="url(#bg)" rx="24"/>
+
+  <!-- Decorative circles -->
+  <circle cx="700" cy="60" r="120" fill="white" opacity="0.04"/>
+  <circle cx="50" cy="450" r="100" fill="white" opacity="0.04"/>
+  <circle cx="400" cy="250" r="200" fill="white" opacity="0.02"/>
+
+  <!-- Header -->
+  <text x="400" y="70" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" fill="rgba(255,255,255,0.7)" letter-spacing="3" font-weight="600">POLITEPAY</text>
+
+  <!-- Pro Badge -->
+  <rect x="340" y="90" width="120" height="32" rx="16" fill="url(#badge)" filter="url(#shadow2)"/>
+  <text x="400" y="112" text-anchor="middle" font-family="system-ui, sans-serif" font-size="14" fill="#1e293b" font-weight="800" letter-spacing="1">PRO PLAN</text>
+
+  <!-- Title -->
+  <text x="400" y="160" text-anchor="middle" font-family="system-ui, sans-serif" font-size="46" fill="white" font-weight="700" letter-spacing="-1">Professional Invoice Reminders</text>
+  <text x="400" y="195" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="rgba(255,255,255,0.85)">Automate follow-ups, get paid faster, never chase a client again</text>
+
+  <!-- Pricing card -->
+  <rect x="200" y="225" width="400" height="80" rx="16" fill="white" opacity="0.15"/>
+  <text x="270" y="275" text-anchor="middle" font-family="system-ui, sans-serif" font-size="40" fill="white" font-weight="700">$12</text>
+  <text x="330" y="280" font-family="system-ui, sans-serif" font-size="16" fill="rgba(255,255,255,0.7)">/month</text>
+  <text x="530" y="280" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="rgba(255,255,255,0.8)">Cancel anytime</text>
+
+  <!-- Feature cards -->
+  <!-- Card 1: Unlimited -->
+  <rect x="40" y="330" width="220" height="130" rx="14" fill="url(#card1)" filter="url(#shadow)"/>
+  <text x="60" y="365" font-family="system-ui, sans-serif" font-size="28">&#8734;</text>
+  <text x="150" y="365" font-family="system-ui, sans-serif" font-size="18" fill="#0f172a" font-weight="700">Unlimited</text>
+  <text x="60" y="390" font-family="system-ui, sans-serif" font-size="13" fill="#475569">No invoice limits. Track</text>
+  <text x="60" y="408" font-family="system-ui, sans-serif" font-size="13" fill="#475569">every client, every dollar.</text>
+
+  <!-- Card 2: Smart Reminders -->
+  <rect x="290" y="330" width="220" height="130" rx="14" fill="url(#card1)" filter="url(#shadow)"/>
+  <text x="310" y="362" font-family="system-ui, sans-serif" font-size="22">&#128276;</text>
+  <text x="345" y="365" font-family="system-ui, sans-serif" font-size="16" fill="#0f172a" font-weight="700">Smart Reminders</text>
+  <text x="310" y="390" font-family="system-ui, sans-serif" font-size="13" fill="#475569">Gentle, Standard &amp;</text>
+  <text x="310" y="408" font-family="system-ui, sans-serif" font-size="13" fill="#475569">Firm auto-reminders.</text>
+
+  <!-- Card 3: Analytics -->
+  <rect x="540" y="330" width="220" height="130" rx="14" fill="url(#card1)" filter="url(#shadow)"/>
+  <text x="560" y="362" font-family="system-ui, sans-serif" font-size="22">&#128202;</text>
+  <text x="595" y="365" font-family="system-ui, sans-serif" font-size="16" fill="#0f172a" font-weight="700">Analytics</text>
+  <text x="560" y="390" font-family="system-ui, sans-serif" font-size="13" fill="#475569">Track paid, overdue,</text>
+  <text x="560" y="408" font-family="system-ui, sans-serif" font-size="13" fill="#475569">and revenue monthly.</text>
+
+  <!-- CTA Button -->
+  <rect x="280" y="435" width="240" height="44" rx="22" fill="white"/>
+  <text x="400" y="463" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" fill="url(#protext)" font-weight="700">Upgrade to Pro</text>
+</svg>
