@@ -67,50 +67,62 @@ export async function middleware(request: NextRequest) {
 
   let supabaseResponse = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(
+            cookiesToSet: {
+              name: string;
+              value: string;
+              options?: Record<string, unknown>;
+            }[]
+          ) {
+            cookiesToSet.forEach(({ name, value }) =>
+              request.cookies.set(name, value)
+            );
+            supabaseResponse = NextResponse.next({ request });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              supabaseResponse.cookies.set(name, value, options)
+            );
+          },
         },
-        setAll(
-          cookiesToSet: {
-            name: string;
-            value: string;
-            options?: Record<string, unknown>;
-          }[]
-        ) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user && path.startsWith("/dashboard")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/auth/login";
-    return addSecurityHeaders(NextResponse.redirect(url));
-  }
-
-  if (user && (path === "/auth/login" || path === "/auth/signup")) {
-    return addSecurityHeaders(
-      NextResponse.redirect(new URL("/dashboard", request.url))
+      }
     );
-  }
 
-  return addSecurityHeaders(supabaseResponse);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user && path.startsWith("/dashboard")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/login";
+      return addSecurityHeaders(NextResponse.redirect(url));
+    }
+
+    if (user && (path === "/auth/login" || path === "/auth/signup")) {
+      return addSecurityHeaders(
+        NextResponse.redirect(new URL("/dashboard", request.url))
+      );
+    }
+
+    return addSecurityHeaders(supabaseResponse);
+  } catch (err) {
+    console.error("middleware: Supabase auth check failed", err);
+    // Don't let a misconfigured/unreachable Supabase project take the whole
+    // site down. Fail open for public paths, fail to login for /dashboard.
+    if (path.startsWith("/dashboard")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/login";
+      return addSecurityHeaders(NextResponse.redirect(url));
+    }
+    return addSecurityHeaders(NextResponse.next({ request }));
+  }
 }
 
 export const config = {
